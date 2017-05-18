@@ -117,9 +117,9 @@ int CTcpServer::OnNewConnArrived(void){
                 log_error("no free CTcpConnection object ");
                 return 0;
             }
-            p_tcp_conn->SetUsingStatus(1);
+            p_tcp_conn->setUsingStatus(1);
             
-            p_tcp_conn->ResetObject();
+            p_tcp_conn->resetObject();
             p_tcp_conn->SetRemoteIp(peer_address.sin_addr.s_addr);
             p_tcp_conn->SetRemotePort(peer_address.sin_port);
             p_tcp_conn->SetLocalIp(_local_ip);

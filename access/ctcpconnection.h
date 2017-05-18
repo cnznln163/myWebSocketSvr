@@ -29,7 +29,7 @@ public:
     
     void InitRingBuffer(uint32_t recv_buffer_size, uint32_t send_buffer_size);
     
-	void ResetObject(void);
+	void resetObject(void);
     
 	void Reset(void);
     
@@ -105,8 +105,7 @@ public:
     int getUsingStatus(void){
         return _in_using;
     }
-    void setUsingStatus(int in_using)
-    {
+    void setUsingStatus(int in_using){
         _in_using = in_using;
     }
     
@@ -145,8 +144,6 @@ public:
     int _ep_type;           // client / server
     int _in_using;
     
-    
-    char _local_ip_string[MAX_IP_STRING_LEN];
     
     uint64_t recv_cnt_bytes;
     uint64_t recv_cnt_pkts;

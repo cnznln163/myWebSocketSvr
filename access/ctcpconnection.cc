@@ -4,7 +4,7 @@
 #include "PacketProcessor.h"
 #include "timer_set.h"
 #include "TcpServer.h"
-#include "TcpConnection.h"
+#include "ctcpconnection.h"
 
 CTcpConnection::CTcpConnection(void){
     _p_recv_buffer = NULL;
@@ -15,7 +15,7 @@ CTcpConnection::CTcpConnection(void){
     
     _in_using = 0;
     _sock_fd = -1;
-    ResetObject();
+    resetObject();
 }
 
 
@@ -37,50 +37,34 @@ CTcpConnection::~CTcpConnection(void){
     _p_send_buffer = NULL;
 }
 
-void CTcpConnection::ResetObject(void)
-{
-    log_info("reset tcp_conn:%p _ep_type:%d sock_fd:%d address %s:%u close connection : "
-             "recv_cnt_bytes:%lu recv_cnt_pkts:%lu send_cnt_bytes:%lu send_cnt_pkts:%lu ",
-              this, _ep_type, _sock_fd, _remote_ip_string, ntohs(_remote_port),
-              recv_cnt_bytes, recv_cnt_pkts, send_cnt_bytes, send_cnt_pkts);
-    
-    if (_p_pkt_proc != NULL)
-    {
+void CTcpConnection::resetObject(void){
+    if (_p_pkt_proc != NULL){
         _p_pkt_proc->ResetObject();
     }
     
     _will_reconnect = 0;
     _ep_type = EP_TYPE_SERVER;
-    
-    _local_ip = 0;
-    _local_port = 0;
-    memset(_local_ip_string, 0, sizeof(_local_ip_string));
-    
-    Reset();
+        
+    reset();
 }
 
-void CTcpConnection::Reset(void)
+void CTcpConnection::reset(void)
 {
-    log_info("reset tcp_conn:%p _ep_type:%d sock_fd:%d ", this, _ep_type, _sock_fd);
+    log_wirte(LOG_INFO,"reset tcp_conn:%p _ep_type:%d sock_fd:%d ", this, _ep_type, _sock_fd);
     
-    if (_p_pkt_proc != NULL)
-    {
+    if (_p_pkt_proc != NULL){
         _p_pkt_proc->Reset();
     }
     
-    if (_sock_fd >= 0)
-    {
-        if (_p_event_poll != NULL)
-        {
-            _p_event_poll->DeleteFromEventLoop(_sock_fd);
+    if (_sock_fd >= 0){
+        if (_p_event_poll != NULL){
+            _p_event_poll->delEvent(_sock_fd);
         }
         close(_sock_fd);
     }
     _sock_fd = -1;
     
-    if (_ep_type == EP_TYPE_SERVER)
-    {
-        _remote_ip = 0;
+    if (_ep_type == EP_TYPE_SERVER){
         _remote_port = 0;
         memset(_remote_ip_string, 0, sizeof(_remote_ip_string));
     }
