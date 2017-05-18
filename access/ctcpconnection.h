@@ -40,10 +40,19 @@ public:
         memcpy(_remote_ip_string,remote_ip,16);
     }
     
-    const char* getLocalIpString(void){
+    const char* getRemoteIp(void){
         return _remote_ip_string;
     }
     
+	void setLocalIp(char* local_ip){
+        memset(_local_ip_string, 0, sizeof(_local_ip_string));
+        memcpy(_local_ip_string,local_ip,16);
+    }
+    
+    const char* getRemoteIp(void){
+        return _local_ip_string;
+    }
+	
     void setRemotePort(uint32_t remote_port){
         _remote_port = remote_port;
     }
@@ -52,6 +61,14 @@ public:
         return _remote_port;
     }
     
+	void setLocalPort(uint32_t local_port){
+        _local_port = local_port;
+    }
+    
+    uint32_t getLocalPort(void){
+        return _local_port;
+    }
+	
     void setSockFd(int sock_fd){
         _sock_fd = sock_fd;
     }
@@ -136,8 +153,10 @@ public:
     }
     
 public:
-    char _remote_ip_string[MAX_IP_STRING_LEN];
-    uint32_t _remote_port;  // network order
+    char _remote_ip_string[MAX_IP_STRING_LEN];//内部服务IP
+    uint32_t _remote_port;
+	char _local_ip_string[MAX_IP_STRING_LEN];//对端IP
+    uint32_t _local_port;  
     int _sock_fd;
     int _connection_status;
     int _will_reconnect;

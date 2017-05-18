@@ -76,21 +76,15 @@ void CTcpConnection::reset(void)
     send_cnt_bytes = 0;
     send_cnt_pkts = 0;
     
-    if (_p_recv_buffer == NULL)
-    {
+    if (_p_recv_buffer == NULL){
         _p_recv_buffer = create_ring_buffer(MAX_RECV_BUFF_LEN);
-    }
-    else
-    {
+    }else{
         clear_ring_buffer(_p_recv_buffer);
     }
     
-    if (_p_send_buffer == NULL)
-    {
+    if (_p_send_buffer == NULL){
         _p_send_buffer = create_ring_buffer(MAX_SEND_BUFF_LEN*2);
-    }
-    else
-    {
+    }else{
         clear_ring_buffer(_p_send_buffer);
     }
 }
@@ -123,23 +117,16 @@ void CTcpConnection::InitRingBuffer(uint32_t recv_buffer_size, uint32_t send_buf
     _p_send_buffer = create_ring_buffer(send_buffer_size);
 }
 
-int CTcpConnection::Init(void)
-{
-    if (_p_recv_buffer == NULL)
-    {
+int CTcpConnection::init(void){
+    if (_p_recv_buffer == NULL){
         _p_recv_buffer = create_ring_buffer(MAX_RECV_BUFF_LEN);
-    }
-    else
-    {
+    }else{
         clear_ring_buffer(_p_recv_buffer);
     }
     
-    if (_p_send_buffer == NULL)
-    {
+    if (_p_send_buffer == NULL){
         _p_send_buffer = create_ring_buffer(MAX_SEND_BUFF_LEN*2);
-    }
-    else
-    {
+    }else{
         clear_ring_buffer(_p_send_buffer);
     }
     
@@ -151,31 +138,24 @@ int CTcpConnection::Init(void)
     
     log_info("init tcp_conn:%p _ep_type:%d sock_fd:%d ", this, _ep_type, _sock_fd);
     
-    if (_ep_type == EP_TYPE_CLIENT)
-    {
-        if (_remote_port == 0)
-        {
-            log_error("tcp_conn:%p _remote_port:0", this);
+    if (_ep_type == EP_TYPE_CLIENT){
+        if (_remote_port == 0){
+            log_wirte(LOG_ERR,"tcp_conn:%p _remote_port:0", this);
             return -1;
         }
         
-        CreateConnection();
+        createConnection();
         return _p_pkt_proc->Init();
-    }
-    else
-    {
-        if (_sock_fd < 0 || _local_port == 0)
-        {
-            log_error("tcp_conn:%p sock_fd or local_port is illegal", this);
+    }else{
+        if (_sock_fd < 0 || _local_port == 0){
+            log_wirte(LOG_ERR,"tcp_conn:%p sock_fd or local_port is illegal", this);
             return -1;
         }
-        
         return _p_pkt_proc->Init();
     }
 }
 
-int CTcpConnection::CreateConnection(void)
-{
+int CTcpConnection::createConnection(void){
     struct sockaddr_in server_address, local_address;
     socklen_t address_len = sizeof(struct sockaddr_in);
     int reconnect_times = 0;
@@ -184,20 +164,16 @@ int CTcpConnection::CreateConnection(void)
     int sock_fd = -1;
     int errno_cached = 0;
     
-    if (_connection_status > CONN_STATUS_CLOSED && _sock_fd > 0)
-    {
+    if (_connection_status > CONN_STATUS_CLOSED && _sock_fd > 0){
         return _sock_fd;
-    }
-    else if (_sock_fd > 0)
-    {
+    }else if (_sock_fd > 0){
         close(_sock_fd);
         _sock_fd = -1;
     }
     
     sock_fd = socket(AF_INET, SOCK_STREAM, 0);
     errno_cached = errno;
-    if (sock_fd < 0)    
-    {        
+    if (sock_fd < 0){        
         log_error("create socket fail, peer(%s:%u) : %s ", _remote_ip_string, ntohs(_remote_port), strerror(errno_cached));
         return -1;    
     }
@@ -206,67 +182,45 @@ int CTcpConnection::CreateConnection(void)
     setsockopt(sock_fd, SOL_SOCKET, SO_REUSEADDR, &flags, sizeof(flags));
     setsockopt(sock_fd, SOL_TCP, TCP_NODELAY, &flags, sizeof(flags));
     
-    if (_local_port != 0) //客户端端口绑定 一般情况下由系统随机分配端口
-    {
-        memset(&local_address, 0, sizeof(struct sockaddr_in));
-        local_address.sin_family = AF_INET;
-        local_address.sin_port = _local_port;
-        local_address.sin_addr.s_addr = _local_ip;
-        
-        if (bind(sock_fd, (struct sockaddr *)&local_address, address_len) != 0)
-        {
-            errno_cached = errno;
-            log_error("bind sock_fd:%d to %s:%u failed, %s", sock_fd, _local_ip_string, ntohs(_local_port), strerror(errno_cached));
-            close(sock_fd);
-            return -2;
-        }
-    }
+    
     
     fcntl(sock_fd, F_SETFL, fcntl(sock_fd, F_GETFL, 0)|O_NONBLOCK);
     
     memset(&server_address, 0, sizeof(struct sockaddr_in));
     server_address.sin_family = AF_INET;
-    server_address.sin_port = _remote_port;
-    server_address.sin_addr.s_addr = _remote_ip; 	
+    server_address.sin_port = htons(_remote_port);
+    server_address.sin_addr.s_addr = inet_addr(_remote_ip);
     
-    log_debug("connect to %s:%u ", _remote_ip_string, ntohs(_remote_port));
+    log_write(LOG_DEBUG,"connect to %s:%u ", _remote_ip_string, _remote_port);
     
     reconnect_times = 0;
 label_reconnect:
     ret_val = connect(sock_fd, (struct sockaddr *)&server_address, address_len);
     errno_cached = errno;
-    if (ret_val < 0)
-    {
-        if (errno_cached == EINTR)
-        {
-            if (reconnect_times < 5)
-            {
+    if (ret_val < 0){
+        if (errno_cached == EINTR){
+            if (reconnect_times < 5){
                 goto label_reconnect;
             }
-        }
-        else if (errno_cached != EINPROGRESS)
-        {
-            log_error("connect to %s:%u failed : %s ", _remote_ip_string, ntohs(_remote_port), strerror(errno_cached));
+        }else if (errno_cached != EINPROGRESS){
+            log_write(LOG_ERR,"connect to %s:%u failed : %s ", _remote_ip_string, _remote_port, strerror(errno_cached));
             close(sock_fd);
             return -3;
         }
         
         _connection_status = CONN_STATUS_CONNECTING;
-        _p_event_poll->Add2EventLoop(sock_fd, this, EPOLLOUT|EPOLLIN);
-    }
-    else
-    {
+        _p_event_poll->addEvent(sock_fd, this, EPOLLOUT|EPOLLIN);
+    }else{
         _connection_status = CONN_STATUS_CONNECTED;
-        _p_event_poll->Add2EventLoop(sock_fd, this, EPOLLIN);
+        _p_event_poll->addEvent(sock_fd, this, EPOLLIN);
         OnConnected();
     }
-    
     _sock_fd = sock_fd;
     
     return _sock_fd;
 }
 
-int CTcpConnection::OnConnected(void)
+int CTcpConnection::onConnected(void)
 {
     int flags = 1;
     
@@ -275,7 +229,7 @@ int CTcpConnection::OnConnected(void)
     
     fcntl(_sock_fd, F_SETFL, fcntl(_sock_fd, F_GETFL, 0)|O_NONBLOCK);
     
-    return _p_pkt_proc->OnConnected();
+    return _p_pkt_proc->onConnected();
 }
 
 int CTcpConnection::ReadData(uint8_t * buffer, int read_len, int at_least)
