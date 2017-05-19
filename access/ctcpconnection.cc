@@ -189,7 +189,7 @@ int CTcpConnection::createConnection(void){
     memset(&server_address, 0, sizeof(struct sockaddr_in));
     server_address.sin_family = AF_INET;
     server_address.sin_port = htons(_remote_port);
-    server_address.sin_addr.s_addr = inet_addr(_remote_ip);
+    server_address.sin_addr.s_addr = inet_addr(_remote_ip_string);
     
     log_write(LOG_DEBUG,"connect to %s:%u ", _remote_ip_string, _remote_port);
     
@@ -213,7 +213,7 @@ label_reconnect:
     }else{
         _connection_status = CONN_STATUS_CONNECTED;
         _p_event_poll->addEvent(sock_fd, this, EPOLLIN);
-        OnConnected();
+        onConnected();
     }
     _sock_fd = sock_fd;
     
