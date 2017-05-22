@@ -29,6 +29,7 @@ public:
 	}
 	int init();
 	int onNewConnArrived(void);
+	int onSockError(void);
 	/* data */
 private:
 	char _local_ip_string[16];

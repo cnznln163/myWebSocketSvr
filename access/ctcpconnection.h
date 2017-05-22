@@ -147,8 +147,7 @@ public:
     int OnSockError(void);
     
     int DumpActiveConnInfo(char * buffer, int buffer_len);
-    void SetPktProc(CPacketProcessor * pkt_proc)
-    {
+    void SetPktProc(CPacketSocket * pkt_proc){
         _p_pkt_proc = pkt_proc;
     }
     
@@ -164,15 +163,10 @@ public:
     int _in_using;
     
     
-    uint64_t recv_cnt_bytes;
-    uint64_t recv_cnt_pkts;
-    uint64_t send_cnt_bytes;
-    uint64_t send_cnt_pkts;
     
-	struct ring_buffer * _p_recv_buffer;
-	struct ring_buffer * _p_send_buffer;
+	CPacketSocket * _p_recv_packet;
+	CPacketSocket * _p_send_packet;
     
-    CPacketProcessor * _p_pkt_proc;
     CEventPoll * _p_event_poll;
 };
 

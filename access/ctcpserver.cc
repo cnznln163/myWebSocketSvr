@@ -87,7 +87,7 @@ int CTcpserver::init(){
     return _sock;
 }
 
-int CTcpServer::OnNewConnArrived(void){
+int CTcpServer::onNewConnArrived(void){
     struct sockaddr_in peer_address;
     socklen_t address_len = sizeof(struct sockaddr_in);
     int sock_fd = -1;
@@ -124,9 +124,9 @@ int CTcpServer::OnNewConnArrived(void){
             p_tcp_conn->SetRemotePort(peer_address.sin_port);
             p_tcp_conn->SetLocalIp(_local_ip);
             p_tcp_conn->SetLocalPort(_local_port);
-            p_tcp_conn->SetSockFd(sock_fd);
-            p_tcp_conn->SetConnectDone();
-            p_tcp_conn->SetEventPoll(_p_event_poll);
+            p_tcp_conn->setSockFd(sock_fd);
+            p_tcp_conn->setConnectDone();
+            p_tcp_conn->setEventPoll(_p_event_poll);
             
             log_info("accept tcp_conn:%p sock_fd:%d address %s:%u ", p_tcp_conn, sock_fd,
                       p_tcp_conn->GetRemoteIpString(), ntohs(p_tcp_conn->GetRemotePort()));
@@ -138,4 +138,11 @@ int CTcpServer::OnNewConnArrived(void){
             continue;
         }
     }
+}
+
+int CTcpServer::onSockError(void){
+    _p_event_poll->delEvent(_sock);
+    close(_sock);
+    _sock = -1;
+    return 0;
 }

@@ -303,8 +303,7 @@ label_recv:
     }
 }
 
-int CTcpConnection::OnCanRead(void)
-{
+int CTcpConnection::onCanRead(void){
     int read_len = 0;
     int at_least = 0;
     int recv_len = 0;
@@ -312,27 +311,21 @@ int CTcpConnection::OnCanRead(void)
     int msg_len = 0;
     int ret_val = 0;
     
-    read_len = get_buffer_free_space(_p_recv_buffer);
-    data_len = get_buffer_data_len(_p_recv_buffer);
+    read_len = _p_recv_packet->getFreeBuffSize();
+    data_len = _p_recv_packet->getPacketSize();
     
-    if (data_len == 0)
-    {
+    if (data_len == 0){
         _p_recv_buffer->read_index = 0;
         _p_recv_buffer->write_index = 0;
         at_least = 4;
-    }
-    else if (data_len < 4)
-    {
+    }else if (data_len < 4){
         at_least = 4 - data_len;
-    }
-    else
-    {
+    }else{
         at_least = 0;
     }
     
     recv_len = ReadData(&(_p_recv_buffer->ring_buffer[_p_recv_buffer->write_index]), read_len, at_least);
-    if (recv_len <= 0)
-    {
+    if (recv_len <= 0){
         return recv_len;
     }
     _p_recv_buffer->write_index += recv_len;
