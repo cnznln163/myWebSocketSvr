@@ -1,5 +1,7 @@
 #include "ctcpevent.h"
 #include "log.h"
+#include "ctcpserver.h"
+#include "ctcpconnection.h"
 
 
 #ifndef EPOLLRDHUP
@@ -26,7 +28,7 @@ static char * get_events_string(uint32_t events){
         index += strlen("EPOLLHUP");
     }
     
-    if (events & EPOLLRDHUP{
+    if (events & EPOLLRDHUP){
         if (index > 0){
             events_string[index++] = '|';
         }
@@ -67,11 +69,11 @@ CTcpevent::~CTcpevent(void){
     }
 }
 
-
+/*
 int CTcpevent::createSocket( char *ip , int port ){
 	struct sockaddr_in local_address;
 	
-	_ip = ip;
+	memcpy();
 	_port = port;
 
 	int optval = 1; // 关闭之后重用socket
@@ -106,16 +108,17 @@ int CTcpevent::createSocket( char *ip , int port ){
 	}
 	return 1;
 }
+*/
 bool CTcpevent::init(){
 	// 创建epoll
-	_epfd  = epoll_create( MAX_FDS );
-	if( _epfd<0 ){
+	_evfd  = epoll_create( MAX_FDS );
+	if( _evfd<0 ){
 		return false;
 	}
 	return true;
 }
 
-int CEventPoll::addEvent(int sock_fd, void * pv_obj, uint32_t events){
+int CTcpevent::addEvent(int sock_fd, void * pv_obj, uint32_t events){
     struct epoll_event epoll_event_obj;
     fd_info_t fd_info;
     fd_info_t * p_fd_info = NULL;
@@ -165,7 +168,7 @@ int CEventPoll::addEvent(int sock_fd, void * pv_obj, uint32_t events){
     return 1;
 }
 
-int CEventPoll::delEvent(int sock_fd){
+int CTcpevent::delEvent(int sock_fd){
     struct epoll_event epoll_event_obj;
     
     if (_evfd < 0){
@@ -189,12 +192,12 @@ int CEventPoll::delEvent(int sock_fd){
     return 1;
 }
 
-int CTcpevent::serverSocketEvents(int sock_fd, CTcpServer * p_tcp_server, uint32_t events){
+int CTcpevent::serverSocketEvents(int sock_fd, CTcpserver * p_tcp_server, uint32_t events){
 	log_write(LOG_DEBUG,"sock_fd:%d events:%s ", sock_fd, get_events_string(events));
     if (events & EPOLLERR){
-        return p_tcp_server->OnSockError();
+        return p_tcp_server->onSockError();
     }else if (events & EPOLLIN){
-        return p_tcp_server->OnNewConnArrived();
+        return p_tcp_server->onNewConnArrived();
     }else{
         return 0;
     }
@@ -210,7 +213,7 @@ int CTcpevent::processEvent(int wait_time){
     }
     
     // 当前状态下只可能有 EINTR 的错误
-    events_cnt = epoll_wait(_epoll_fd, _event_array, MAX_EVENTS, wait_time);
+    events_cnt = epoll_wait(_evfd, _event_array, MAX_EVENTS, wait_time);
     if (events_cnt > 0){
         for (i=0; i<events_cnt; i++){
             int sock_fd = _event_array[i].data.fd;
@@ -219,7 +222,7 @@ int CTcpevent::processEvent(int wait_time){
             
             std::map<int, fd_info_t>::iterator fd_info_itr = _fd_info_map.find(sock_fd);
             if (fd_info_itr == _fd_info_map.end()){
-                log_error("sock_fd:%d is not in _fd_info_map ", sock_fd);
+                log_write(LOG_ERR,"sock_fd:%d is not in _fd_info_map ", sock_fd);
                 delEvent(sock_fd);
                 continue;
             }
@@ -227,7 +230,7 @@ int CTcpevent::processEvent(int wait_time){
             pv_obj = p_fd_info->pv_obj;
             
             if (sock_fd != p_fd_info->fd){
-                log_error("sock_fd:%d not equal p_fd_info->fd:%d ", sock_fd, p_fd_info->fd);
+                log_write(LOG_ERR,"sock_fd:%d not equal p_fd_info->fd:%d ", sock_fd, p_fd_info->fd);
                 delEvent(sock_fd);
                 continue;
             }
@@ -235,7 +238,7 @@ int CTcpevent::processEvent(int wait_time){
             // log_debug("sock_fd:%d pv_obj:%p events:%s _fd_info_map.size:%d ", sock_fd, pv_obj, get_events_string(_event_array[i].events), _fd_info_map.size());
             
             if (is_tcp_server(pv_obj)){ //链接未建立，建立链接
-                dealServerSocketEvents(sock_fd, (CTcpServer *)pv_obj, _event_array[i].events);
+                dealServerSocketEvents(sock_fd, (CTcpserver *)pv_obj, _event_array[i].events);
                 continue;
             }else{
                 dealDataSocketEvents(sock_fd, (CTcpConnection *)pv_obj, _event_array[i].events);
@@ -247,45 +250,47 @@ int CTcpevent::processEvent(int wait_time){
     return events_cnt;
 }
 
-int CEventPoll::dealServerSocketEvents(int sock_fd, CTcpServer * p_tcp_server, uint32_t events){
+int CTcpevent::dealServerSocketEvents(int sock_fd, CTcpserver * p_tcp_server, uint32_t events){
     log_write(LOG_DEBUG,"sock_fd:%d events:%s ", sock_fd, get_events_string(events));
     
     if (events & EPOLLERR){
         return p_tcp_server->onSockError();
     }else if (events & EPOLLIN){
-        return p_tcp_server->OnNewConnArrived();
+        return p_tcp_server->onNewConnArrived();
     }else{
         return 0;
     }
 }
 
-int CEventPoll::dealDataSocketEvents(int sock_fd, CTcpConnection * p_tcp_connection, uint32_t events){
+int CTcpevent::dealDataSocketEvents(int sock_fd, CTcpConnection * p_tcp_connection, uint32_t events){
     int deal_data_len = 0;
     int conn_fd = p_tcp_connection->getSockFd();
     
-    log_write(LOG_DEBUG,"sock_fd:%d tcp_conn:%p conn_fd:%d events:%s ", sock_fd, p_tcp_connection, conn_fd, get_events_string(events));
+    log_write(LOG_DEBUG,"sock_fd:%d tcp_conn:%p conn_fd:%d events:%s \n", sock_fd, p_tcp_connection, conn_fd, get_events_string(events));
     
-    if (sock_fd != conn_fd || p_tcp_connection->GetUsingStatus() != 1){   // 正常情况下不可能出现
+    if (sock_fd != conn_fd || p_tcp_connection->getUsingStatus() != 1){   // 正常情况下不可能出现
         log_write(LOG_ERR,"sock_fd:%d tcp_conn:%p conn_fd:%d events:%s error ", sock_fd, p_tcp_connection, conn_fd, get_events_string(events));
         
         if (sock_fd != conn_fd){
             delEvent(sock_fd);
             close(sock_fd);
         }
-        p_tcp_connection->OnSockError();
+        p_tcp_connection->onSockError();
         return -1;
     }
     
     if (events & (EPOLLERR|EPOLLHUP|EPOLLRDHUP)){
-        return p_tcp_connection->OnSockError();
+        return p_tcp_connection->onSockError();
     }
     
     if (events & EPOLLOUT){
-        int write_len = p_tcp_connection->OnCanWrite();
+        /*
+        int write_len = p_tcp_connection->onCanWrite();
         if (write_len < 0){
             return write_len;
         }
-        deal_data_len += write_len;
+        */
+        //deal_data_len += write_len;
     }
     
     if (events & EPOLLIN){

@@ -1,4 +1,6 @@
 #include "ctcpserver.h"
+#include "objectmanger.h"
+#include "ctcpconnection.h"
 
 std::set<void *> g_server_set;
 
@@ -66,7 +68,11 @@ int CTcpserver::init(){
         close(sock_fd);
         return -1;
     }
-    
+    int kernel_buffer_size = 0x10000;
+    if (setsockopt(sock_fd, SOL_SOCKET, SO_RCVBUF, &kernel_buffer_size, sizeof(kernel_buffer_size)) != 0){//设置接收缓冲区大小为200K
+        perror("set sync SOL_SOCKET:SO_RCVBUF fail ");
+        return 0;
+    }
     // 当前的实现中 backlog 是没有意义的
     if (listen(sock_fd, 64) < 0){
         errno_cached = errno;
@@ -74,9 +80,7 @@ int CTcpserver::init(){
         close(sock_fd);
         return -1;
     }
-    
-    if (g_server_set.find(this) == g_server_set.end())
-    {
+    if (g_server_set.find(this) == g_server_set.end()){
        g_server_set.insert(this); 
     }
     
@@ -87,7 +91,7 @@ int CTcpserver::init(){
     return _sock;
 }
 
-int CTcpServer::onNewConnArrived(void){
+int CTcpserver::onNewConnArrived(void){
     struct sockaddr_in peer_address;
     socklen_t address_len = sizeof(struct sockaddr_in);
     int sock_fd = -1;
@@ -108,39 +112,39 @@ int CTcpServer::onNewConnArrived(void){
             }else if (errno_cached == EAGAIN){ //非阻塞模式 等待接收队列为空 立即返回
                 return 0;
             }else{
-                log_error("accept client connecting fail : %s ", strerror(errno_cached));
+                log_write(LOG_ERR,"accept client connecting fail : %s ", strerror(errno_cached));
                 return -1;
             }
         }else{
             CTcpConnection * p_tcp_conn = TcpConnectionManager::Instance()->AllocateOneObject();
             if (p_tcp_conn == NULL){
-                log_error("no free CTcpConnection object ");
+                log_write(LOG_ERR,"no free CTcpConnection object ");
                 return 0;
             }
             p_tcp_conn->setUsingStatus(1);
             
             p_tcp_conn->resetObject();
-            p_tcp_conn->SetRemoteIp(peer_address.sin_addr.s_addr);
-            p_tcp_conn->SetRemotePort(peer_address.sin_port);
-            p_tcp_conn->SetLocalIp(_local_ip);
-            p_tcp_conn->SetLocalPort(_local_port);
+            p_tcp_conn->setRemoteIp(inet_ntoa(peer_address.sin_addr));
+            p_tcp_conn->setRemotePort(ntohs(peer_address.sin_port));
+            p_tcp_conn->setLocalIp(_local_ip_string);
+            p_tcp_conn->setLocalPort(_local_port);
             p_tcp_conn->setSockFd(sock_fd);
             p_tcp_conn->setConnectDone();
-            p_tcp_conn->setEventPoll(_p_event_poll);
+            p_tcp_conn->setTcpEvent(_p_event_poll);
             
-            log_info("accept tcp_conn:%p sock_fd:%d address %s:%u ", p_tcp_conn, sock_fd,
-                      p_tcp_conn->GetRemoteIpString(), ntohs(p_tcp_conn->GetRemotePort()));
+            log_write(LOG_INFO,"accept tcp_conn:%p sock_fd:%d address %s:%u ", p_tcp_conn, sock_fd,
+                      p_tcp_conn->getRemoteIp(), p_tcp_conn->getRemotePort());
             
-            p_tcp_conn->Init();
-            p_tcp_conn->OnConnected();
-            _p_event_poll->Add2EventLoop(sock_fd, p_tcp_conn, EPOLLIN);
+            p_tcp_conn->init();
+            p_tcp_conn->onConnected();
+            _p_event_poll->addEvent(sock_fd, p_tcp_conn, EPOLLIN);
             
             continue;
         }
     }
 }
 
-int CTcpServer::onSockError(void){
+int CTcpserver::onSockError(void){
     _p_event_poll->delEvent(_sock);
     close(_sock);
     _sock = -1;

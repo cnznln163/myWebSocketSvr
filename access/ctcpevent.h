@@ -29,8 +29,11 @@
 typedef struct fd_info{
 	int fd;
 	uint32_t events;
-	void *pv_info;
+	void *pv_obj;
 } fd_info_t;
+
+class CTcpserver;
+class CTcpConnection;
 
 class CTcpevent
 {
@@ -38,15 +41,18 @@ public:
 	CTcpevent();
 	//int createSocket(char *ip,int port);
 	bool init();
-	int processEvent();
+	int processEvent(int wait_time);
 	int addEvent(int sock_fd , void *pv_obj , uint32_t events);
 	int delEvent(int sock_fd);
-	int serverSocketEvents(int sock_fd, CTcpServer * p_tcp_server, uint32_t events);
+	int serverSocketEvents(int sock_fd, CTcpserver * p_tcp_server, uint32_t events);
+	//int createSocket( char *ip , int port );
 	~CTcpevent();
 
 	/* data */
 private:
 	void setNonblockingSocket( int fd );
+	int dealServerSocketEvents(int sock_fd, CTcpserver * p_tcp_server, uint32_t events);
+	int dealDataSocketEvents(int sock_fd, CTcpConnection * p_tcp_connection, uint32_t events);
 	int _sfd;
 	int _evfd;
 	struct epoll_event _event_array[MAX_EVENTS];

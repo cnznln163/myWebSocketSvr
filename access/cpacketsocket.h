@@ -1,111 +1,153 @@
 #ifndef C_PACKETSOCKET_H
 #define C_PACKETSOCKET_H
-#include <strlib.h>
+#include <stdlib.h>
+#include <string>
+#include <arpa/inet.h>
 #define MAX_PACKET_BUF 0x20000 //128k
 //[int body len|unsigned char ver|int cmd]
 #define PACKET_HEADER_SIZE 9
-
+using namespace std;
 typedef unsigned char BYTE;
 
 class CPacketSocket
 {
 public:
-	CPacketSocket(void){};
+	CPacketSocket(void){reset();};
 	~CPacketSocket(void){};
-	void appendBuf(char *buf , int buff_size){
-		if( buf == NULL || buff_size <= 0 || buff_size+m_pos > MAX_PACKET_BUF ){
-			return ;	
-		}
-		memcpy(m_strbuf,buf,buff_size);
-		m_packetSize += buff_size;
-		m_pos = buff_size;
+	
+	char* getPacketBuffer(){
+		return &(m_strbuf[write_index]);
 	};
 	int getPos(){
 		return m_pos;
-	}
+	};
 	int getPacketSize(){
 		return m_packetSize;
+	};
+	int getRecvDataLen(){
+		return write_index;
+	}
+	int getFreeDataLen(){
+		return m_buffLen-read_index;
 	}
 	int getFreeBuffSize(){
-		return MAX_PACKET_BUF-m_packetSize;
+		return m_buffLen-write_index;
+	}
+	int getHeadPacketSize(){
+		int size;
+		memcpy((char *)&size, m_strbuf+read_index, sizeof(int));
+		size = ntohl(size);
+		if( size < PACKET_HEADER_SIZE-4 ){
+			return -1;
+		}
+		return size;
+	}
+	int getCommond(){
+		return m_cmd;
 	}
 	void reset(){
+		//read reset
 		memset(m_strbuf,0,MAX_PACKET_BUF);
+		m_buffLen = MAX_PACKET_BUF;
 		m_packetSize = 0;
 		m_packetHeadSize = 0 ;
 		m_pos = 0;
 		m_buffType = 0;
+		read_index=0;
+		write_index=0;
+		m_ver = 'J';
+		//write reset
+		memset(m_wstrBuf,0,MAX_PACKET_BUF);
+		m_wHeadSize = 0;
+		m_wPacketSize = 0;
 	}
 	// 处理PACKET数据
-	int parsePacket(char *data, int length){
+	int parsePacket(int length){
 		int ret = -1; //出错返回
-		int ndx = 0;
-		while(ndx < length && m_nStatus != REQ_ERROR){//可能会同时来两个包 
-			switch(m_nStatus){
-				case REQ_REQUEST:
-				case REQ_HEADER:
-					ret = read_header(data, length, ndx);
-					if(ret < 0){	
-						m_nStatus = REQ_ERROR;
-						break;
-					}else if(0 == ret){
-						break;  //继续接受包头
-					}
-					ret = parse_header();
-					if(ret != 0){
-						m_nStatus = REQ_ERROR;
-						break;
-					}else
-						m_nStatus = REQ_BODY;			
-				
-				case REQ_BODY:
-					if(parse_body(data, length, ndx))
-						m_nStatus = REQ_DONE;
-					break;
-				default:
-					return -1;
-			}
-
-			if(m_nStatus == REQ_ERROR)
-			{
-				this->reset();
-				return ret;
-			}
-			if(m_nStatus == REQ_DONE)
-			{
-				if(OnPacketComplete(&m_Packet) == -1)
-				{
-					this->reset();
-					return -1;
-				}
-				this->reset();
-			}
+		ret = beginPacket(length);
+		if( ret != 0 ){
+			return ret;
 		}
 		return 0; // return 0 to continue
 	}
-	bool WriteIntExtend(int nValue) {int value = htonl(nValue); return _WriteExtend((char*)&value, sizeof(int));}
-	bool WriteShortExtend(short nValue) {short value = htons(nValue); return _WriteExtend((char*)&value, sizeof(short));}
-	bool WriteByteExtend(BYTE nValue) {return _WriteExtend((char*)&nValue, sizeof(BYTE));}
-    
-	int ReadIntExtend(int pos)		{int nValue = -1; _ReadExtend((char*)&nValue, pos, sizeof(int)); return ntohl(nValue);} 
-	short ReadShortExtend(int pos)	{short nValue = -1; _ReadExtend((char*)&nValue, pos, sizeof(short)); return ntohs(nValue);}
-	BYTE ReadByteExtend(int pos)	{BYTE nValue = -1; _ReadExtend((char*)&nValue, pos, sizeof(BYTE)); return nValue;}
-	/* data */
-private://private function
-	// 读取Packet头数据   //1:成功,  0:继续接受包头,   -1:错误包头
-	int read_header(char *data, int length, int &ndx){
-		while(m_nPacketPos < PACKET_BY_HEADER_SIZE && ndx < length){
-			m_strbuf[m_nPacketPos++] = data[ndx++];
+	//处理1个以上完整包数据时当已取出了一个完整包时，需要把前一个完整包走buff中移除
+    void movePacket(int moveLen){
+    	memmove(m_strbuf,m_strbuf+read_index,moveLen);
+    }
+	int readInt(void)		{int nValue = -1; _read((char*)&nValue, sizeof(int)); return ntohl(nValue);} //这里必需初始化
+	bool readInt(int& nValue){nValue=-1; bool ret=_read((char*)&nValue, sizeof(int)); nValue=ntohl(nValue); return ret;}
+	unsigned long readULong(void) {unsigned long nValue = -1; _read((char*)&nValue, sizeof(unsigned long)); return ntohl(nValue);}
+	short readShort(void)	{short nValue = -1; _read((char*)&nValue, sizeof(short)); return ntohs(nValue);}
+	BYTE readByte(void)		{BYTE nValue = -1; _read((char*)&nValue, sizeof(BYTE)); return nValue;}
+	
+	int readString(char *pOutString,int maxLen){
+		int nLen = readInt();
+		if(nLen == -1)  //这里必需判断
+			return -1;
+		if(nLen > maxLen){
+			_readundo(sizeof(int));
+			return -1;
 		}
-
-		if(m_nPacketPos < PACKET_BY_HEADER_SIZE){//继续读
-			return 0;    
-		}
-		m_packetHeadSize = PACKET_BY_HEADER_SIZE;
-		return 1;
+		_read(pOutString, nLen);
+		return nLen;
 	}
+	
+	void beginWrite(int cmd){
+		memset(m_wstrBuf,0,MAX_PACKET_BUF);
+		m_wHeadSize = PACKET_HEADER_SIZE;
+		int nCmd = htonl(cmd);
+		_writeHeader((char *)&m_ver, sizeof(char), 4);	// 主版本号
+		_writeHeader((char*)&nCmd, sizeof(int), 5);	// 命令码
+		m_wPacketSize = m_wHeadSize;
+	}
+	void endWrite(){
+		int nBody = m_wPacketSize - 4;	//数据包长度包括命令头和body,4个字节是数据包长度
+		int len = htonl(nBody);
+		_writeHeader((char*)&len, sizeof(int), 0);	// 包正文长度
+	}
+	char *getWriteBuff(){
+		return m_wstrBuf;
+	}
+	int getWriteBuffLen(){
+		return m_wPacketSize;
+	}
+	bool writeInt(int nValue)		{int value = htonl(nValue); return _write((char*)&value, sizeof(int));}
+	bool writeULong(unsigned long nValue) {unsigned long value = htonl(nValue);return _write((char*)&value, sizeof(unsigned long));}
+	bool writeByte(BYTE nValue)		{return _write((char*)&nValue, sizeof(BYTE));}
+	bool writeShort(short nValue)	{short value = htons(nValue); return _write((char*)&value, sizeof(short));}
+	//在正文首插入数据
+	//bool InsertInt(int nValue)		{int value = htonl(nValue); return base::_Insert((char*)&value, sizeof(int));}
+	//bool InsertByte(BYTE nValue)	{return base::_Insert((char*)&nValue, sizeof(BYTE));}
+	bool WriteString(const char *pString){
+		int nLen = (int)strlen(pString) ;
+		writeInt(nLen + 1) ;
+		if ( nLen > 0 ){
+			return _write(pString, nLen) && _writezero();
+		}else{
+			return _writezero();
+		}
+	}
+
+	bool writeString(const string &strDate){
+		int nLen = (int)strDate.size();
+		writeInt(nLen + 1);
+		if ( nLen > 0 ){
+			return _write(strDate.c_str(), nLen) && _writezero();
+		}else{
+			return _writezero();
+		}
+	}
+
+	bool writeBinary(const char *pBuf, int nLen){
+		writeInt(nLen) ;
+		return _write(pBuf, nLen) ;
+	}
+	
+	/* data */
+private:// private function
+	
 	// 解析Packet头信息
-	int parse_header(void){ //0:成功 -1:命令范围错误 -2:版本错误 -3:长度错误
+	int beginPacket(int length){ //0:成功 -1:命令范围错误 -2:版本错误 -3:长度错误
 		int nCmd;
 		_readHeader((char *)&nCmd,sizeof(int),5);
 		m_cmd = ntohl(nCmd);
@@ -118,12 +160,8 @@ private://private function
 		if( m_ver != ver ){
 			return -2;
 		}
-		int bodyLen,mBodyLen;
-		_readHeader((char*)&bodyLen, sizeof(int), 0);// 包正文长度
-		mBodyLen = ntohl(bodyLen);
-		if(m_nBodyLen <= 0 && m_nBodyLen > (MAX_PACKET_BUF - m_packetHeadSize))
-			return -3;
-		m_packetSize = mBodyLen;
+		m_packetSize = length+4;//包含包体长度4字节int
+		m_pos = PACKET_HEADER_SIZE;
 		return 0;
 	}
 
@@ -131,59 +169,61 @@ private://private function
 	void _readHeader(char *pOut, int nLen, int nPos){
 		memcpy(pOut, m_strbuf+nPos, nLen) ;
 	}
-	// 解析BODY数据
-	bool parse_body(char *data, int length, int &ndx){
-		int nNeed = (m_packetSize+m_packetHeadSize) - m_nPacketPos;
-		int nBuff = length - ndx;
-
-		if(nNeed <= 0)
-			return true;
-		if(nBuff <= 0)
-			return false;
-
-		int nCopy = nBuff < nNeed ? nBuff : nNeed;
-		if(writeBody(data + ndx, nCopy))
-			return false;
-
-		m_nPacketPos += nCopy;
-		ndx += nCopy;
-
-		if(m_nPacketPos < (m_packetSize+m_packetHeadSize) )
-			return false;
-       
-		return true;
+	// writeHeader
+	void _writeHeader(char *pIn, size_t nLen, int nPos){
+		memcpy(m_wstrBuf+nPos, pIn, nLen);
 	}
-
-	bool writeBody(const char *pIn, int nLen){
-		int m_nPacketSize = m_nPacketPos;
-		if((m_nPacketSize < 0) || ((nLen + m_nPacketSize) > MAX_PACKET_BUF))
-			return false ;
-		memcpy(m_strbuf+m_nPacketSize, pIn, nLen);
-		return true;
-	}
-	bool _WriteExtend(const char *pIn, int nLen){
-		if((m_nPacketSize < 0) || ((nLen + m_nPacketSize) > MAX_PACKET_BUF))
+	
+	// 取出一个变量
+	bool _read(char *pOut, int nLen){
+		if((nLen + m_pos) > m_packetSize || (nLen + m_pos) > MAX_PACKET_BUF)
 			return false ;
 
-		memcpy(m_strBuf+m_nHeadSize, pIn, nLen);
-		m_nHeadSize+=nLen;
-		m_nBufPos = m_nHeadSize;
-		m_nPacketSize = m_nHeadSize;
-
-        _WriteExtenSize();
+		memcpy(pOut, m_strbuf + m_pos, nLen);
+		m_pos += nLen;
 		return true;
 	}
+	// 写入一个变量
+	bool _write(const char *pIn, int nLen){
+		if((m_wPacketSize < 0) || ((nLen + m_wPacketSize) > MAX_PACKET_BUF))
+			return false ;
+		memcpy(m_wstrBuf+m_wPacketSize, pIn, nLen);
+		m_wPacketSize += nLen;
+		return true;
+	}
+	bool _writezero(void){
+		if((m_wPacketSize + 1) > MAX_PACKET_BUF)
+			return false ;
+		memset(m_wstrBuf+m_wPacketSize, '\0', sizeof(char)) ;
+		m_wPacketSize ++;
+		return true;
+	}
+	//读撤消
+	void _readundo(int nLen){
+		m_pos -= nLen;
+	}
+public:
+	//read data define
+	int read_index;
+	int write_index;
 
 private:
+	//读背
 	char m_strbuf[MAX_PACKET_BUF];
+	int m_buffLen;
 	int m_packetSize;
 	int m_packetHeadSize;
 	int m_nPacketPos;
 	int m_pos;
 	int m_buffType;
-	int m_nStatus;
 	int m_cmd;
 	int m_ver;
+	//写包
+	char m_wstrBuf[MAX_PACKET_BUF];
+	int  m_wHeadSize;
+	int  m_wPacketSize;
+
+
 	enum REQSTATUS{	REQ_REQUEST=0, REQ_HEADER, REQ_BODY, REQ_DONE, REQ_PROCESS, REQ_ERROR };
 };
 

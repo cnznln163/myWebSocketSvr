@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include "log.h"
+#include "ctcpevent.h"
+
 class CTcpevent;
 
 int is_tcp_server(void * pv_obj);

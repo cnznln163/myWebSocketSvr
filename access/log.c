@@ -75,6 +75,10 @@ int log_write(  int level , const char *fmt, ... ){
 	va_start(arg_ptr, fmt);
 	vslen = vsnprintf(pos, LOCAL_LOG_CONTENT_MAX - len, fmt, arg_ptr);
 	va_end(arg_ptr);
+	if( g_log_contents[vslen+len-1] != '\n' ){
+		g_log_contents[vslen+len] = '\n';
+		vslen++;
+	}
 	fwrite( g_log_contents , len+vslen, 1 , log_fd );
 	fclose(log_fd);
 	return LOG_SUCCESSFUL;

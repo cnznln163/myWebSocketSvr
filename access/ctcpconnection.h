@@ -3,6 +3,8 @@
 
 #include "log.h"
 #include "objectmanger.h"
+#include "cpacketsocket.h"
+#include "csockethandler.h"
 #define MAX_MSG_LEN         0x20000             // 128KB
 #define MAX_SEND_BUFF_LEN   (MAX_MSG_LEN*2)     // 256KB
 #define MAX_RECV_BUFF_LEN   (MAX_MSG_LEN*2)     // 256KB
@@ -16,8 +18,8 @@
 
 #define MAX_IP_STRING_LEN   16
 
-struct ring_buffer;
-class CPacketProcessor;
+
+class CPacketSocket;
 class CTcpevent;
 
 class CTcpConnection
@@ -27,13 +29,12 @@ public:
     
     ~CTcpConnection(void);
     
-    void InitRingBuffer(uint32_t recv_buffer_size, uint32_t send_buffer_size);
     
 	void resetObject(void);
     
-	void Reset(void);
+	void reset(void);
     
-    int Init(void);
+    int init(void);
     
     void setRemoteIp(char* remote_ip){
         memset(_remote_ip_string, 0, sizeof(_remote_ip_string));
@@ -49,7 +50,7 @@ public:
         memcpy(_local_ip_string,local_ip,16);
     }
     
-    const char* getRemoteIp(void){
+    const char* getLocalIp(void){
         return _local_ip_string;
     }
 	
@@ -107,10 +108,6 @@ public:
         return _ep_type;
     }
    
-    CPacketProcessor * GetPktProc(void){
-        return _p_pkt_proc;
-    }
-    
     void setTcpEvent(CTcpevent * p_event_poll){
         _p_event_poll = p_event_poll;
     }
@@ -130,9 +127,9 @@ public:
     
     int onConnected(void);
     
-    int readData(uint8_t * buffer, int read_len, int waiting_entire_msg);
+    int readData(char * buffer, int read_len, int waiting_entire_msg);
     
-    int OnCanRead(void);
+    int onCanRead(void);
     
     int SendMsgInternal(uint8_t * data_buffer, int data_len);
     
@@ -142,14 +139,11 @@ public:
     
     int SendMsg(uint8_t * msg, int msg_len);
     
-    void CloseConnection(void);
+    void closeConnection(void);
     
-    int OnSockError(void);
+    int onSockError(void);
     
-    int DumpActiveConnInfo(char * buffer, int buffer_len);
-    void SetPktProc(CPacketSocket * pkt_proc){
-        _p_pkt_proc = pkt_proc;
-    }
+   
     
 public:
     char _remote_ip_string[MAX_IP_STRING_LEN];//内部服务IP
@@ -162,19 +156,20 @@ public:
     int _ep_type;           // client / server
     int _in_using;
     
-    
+    uint64_t recv_cnt_bytes;
+    uint64_t recv_cnt_pkts;
+    uint64_t send_cnt_bytes;
+    uint64_t send_cnt_pkts;
     
 	CPacketSocket * _p_recv_packet;
-	CPacketSocket * _p_send_packet;
     
-    CEventPoll * _p_event_poll;
+    CTcpevent * _p_event_poll;
+
+    CSocketHandler *_p_chandler;
+
 };
 
 
 #define TcpConnectionManager CObjectManager<CTcpConnection>
-
-#endif
-
-
 
 #endif
