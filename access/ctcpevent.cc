@@ -304,8 +304,39 @@ int CTcpevent::dealDataSocketEvents(int sock_fd, CTcpConnection * p_tcp_connecti
     return deal_data_len;
 }
 
+int CTcpevent::stopMonitoringEvents(int sock_fd, void * pv_obj, uint32_t events){
+    fd_info_t * p_fd_info = NULL;
+    struct epoll_event epoll_event_obj;
+    int errno_cache = 0;
+    
+    if (_evfd < 0){
+        log_write(LOG_ERR,"the event_poll is not initialized ");
+        return -1;
+    }
+    
+    std::map<int, fd_info_t>::iterator fd_info_itr = _fd_info_map.find(sock_fd);
+    if (fd_info_itr == _fd_info_map.end()){
+        log_write(LOG_ERR,"sock_fd:%d is not in _fd_info_map ", sock_fd);
+        return -1;
+    }
+    
+    p_fd_info = &(fd_info_itr->second);
+    p_fd_info->events &= ~events;
+    
+    log_write(LOG_DEBUG,"sock_fd:%d pv_obj:%p p_fd_info->events:%s ", sock_fd, pv_obj, get_events_string(p_fd_info->events));
+    
+    epoll_event_obj.events = p_fd_info->events;
+    epoll_event_obj.data.fd = sock_fd;
+    if (epoll_ctl(_evfd, EPOLL_CTL_MOD, sock_fd, &epoll_event_obj) < 0){
+        errno_cache = errno;
+        log_write(LOG_ERR,"modify monitoring events of sock_fd:%d fail : %s ", sock_fd, strerror(errno_cache));
+        return -1;
+    }
+    return 1;
+}
+
 void setNonblockingSocket(int fd){
 	if( fcntl(fd , F_SETFL , fcntl(fd , F_GETFD , 0)|O_NONBLOCK) == -1 ){
-		 log_write(LOG_ERR,"set_nonblocking_socket fail:%d\n",fd);	
+		 log_write(LOG_ERR,"set_nonblocking_socket fail:%d\n",fd);
 	}
 }

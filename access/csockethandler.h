@@ -2,16 +2,18 @@
 #define CSCOKETHANDLER_H
 #include "cpacketsocket.h"
 #include "commond.h"
+class CTcpConnection;
+
 class CSocketHandler
 {
 public:
 	CSocketHandler(){};
 	~CSocketHandler(){};
 
-	int inputNotify(CPacketSocket *packet);
+	int inputNotify(CTcpConnection *c , CPacketSocket *packet);
 	/* data */
 private:
-	int login(CPacketSocket *packet);
+	int login(CTcpConnection *c , CPacketSocket *packet);
 };
 
 #endif

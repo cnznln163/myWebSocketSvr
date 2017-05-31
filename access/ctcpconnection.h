@@ -131,9 +131,9 @@ public:
     
     int onCanRead(void);
     
-    int SendMsgInternal(uint8_t * data_buffer, int data_len);
+    int sendMsgInternal(char * data_buffer, int data_len);
     
-    int WriteData(void);
+    int writeData(void);
     
     int OnCanWrite(void);
     

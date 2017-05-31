@@ -47,6 +47,16 @@ public:
 	int serverSocketEvents(int sock_fd, CTcpserver * p_tcp_server, uint32_t events);
 	//int createSocket( char *ip , int port );
 	~CTcpevent();
+    
+    int stopMonitoringEvents(int sock_fd, void * pv_obj, uint32_t events);
+    
+    int stopMonitoringRead(int sock_fd, void * pv_obj){
+        return stopMonitoringEvents(sock_fd, pv_obj, EPOLLIN);
+    }
+    
+    int stopMonitoringWrite(int sock_fd, void * pv_obj){
+        return stopMonitoringEvents(sock_fd, pv_obj, EPOLLOUT);
+    }
 
 	/* data */
 private:

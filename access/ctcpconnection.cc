@@ -240,6 +240,7 @@ int CTcpConnection::onCanRead(void){
     int data_len = 0;
     int msg_len = 0;
     int ret_val = 0;
+    int inputRet = -1;
     char *buffer=NULL;
     
     read_len = _p_recv_packet->getFreeBuffSize();//还有多少字节可写
@@ -292,7 +293,16 @@ int CTcpConnection::onCanRead(void){
                 closeConnection();
                 return -1;
             }
-            _p_chandler->inputNotify(_p_recv_packet);
+            inputRet = _p_chandler->inputNotify(this,_p_recv_packet);
+            if( inputRet == 1 ){
+                writeData();
+            }else if( inputRet == 0 ){
+                log_write(LOG_ERR, "deal input notify fail:%d ",inputRet);
+            }else{
+                log_write(LOG_ERR, "deal input notify fail:%d ",inputRet);
+                closeConnection();
+                return -1;
+            }
             _p_recv_packet->read_index += msg_len+4;
             data_len -= msg_len+4;
         }else{
@@ -315,14 +325,12 @@ int CTcpConnection::onCanRead(void){
     return recv_len;
 }
 
-int CTcpConnection::SendMsgInternal(uint8_t * data_buffer, int data_len)
-{
+int CTcpConnection::sendMsgInternal(char * data_buffer, int data_len){
     int send_len = 0;
     int send_times = 0;
     int errno_cached = 0;
     
-    if (data_buffer == NULL || data_len <= 0)
-    {
+    if (data_buffer == NULL || data_len <= 0){
         log_write(LOG_ERR,"data_buffer:%p data_len:%d ", data_buffer, data_len);
         return -1;
     }
@@ -331,46 +339,33 @@ label_send:
     send_len = send(_sock_fd, data_buffer, data_len, 0);
     errno_cached = errno;
     
-    log_write(LOG_DEBUG,"sock_fd:%d send msg length:%d to peer %s:%d ", _sock_fd, send_len, _remote_ip_string, ntohs(_remote_port));
+    log_write(LOG_DEBUG,"sock_fd:%d send msg length:%d to peer %s:%d ", _sock_fd, send_len, _remote_ip_string, _remote_port);
     
-    if (send_len == data_len)
-    {
+    if (send_len == data_len){
         return send_len;
-    }
-    else if (send_len > 0)
-    {   // 内核缓冲区满了, 但当前数据只有部分拷贝到了内核
+    }else if (send_len > 0){   // 内核缓冲区满了, 但当前数据只有部分拷贝到了内核
         return send_len;
-    }
-    else if (send_len == 0 && send_times < 5)
-    {
+    }else if (send_len == 0 && send_times < 5){
         send_times++;
         log_write(LOG_INFO,"send_len:0 send_times:%d ", send_times);
         goto label_send;
-    }
-    else
-    {
-        if (errno_cached == EAGAIN)
-        {
+    }else{
+        if (errno_cached == EAGAIN){
             return 0;
-        }
-        else if (errno_cached == EINTR && send_times < 5)
-        {
+        }else if (errno_cached == EINTR && send_times < 5){
             send_times++;
             log_write(LOG_INFO,"errno_cached == EINTR, send_times:%d ", send_times);
             goto label_send;
-        }
-        else
-        {
+        }else{
             log_write(LOG_ERR,"tcp_conn:%p sock_fd:%d send data to address %s:%u failed send_times:%d : %s ",
-                       this, _sock_fd, _remote_ip_string, ntohs(_remote_port), send_times, strerror(errno_cached));
+                       this, _sock_fd, _remote_ip_string, _remote_port, send_times, strerror(errno_cached));
             closeConnection();
             return -1;
         }
     }
 }
 
-int CTcpConnection::WriteData(void)
-{
+int CTcpConnection::writeData(void){
     int data_len = 0;
     int send_len = 0;
     
@@ -378,79 +373,26 @@ int CTcpConnection::WriteData(void)
         log_write(LOG_ERR,"_connection_status != CONN_STATUS_CONNECTED ");
         return 0;
     }
-    /*
-    data_len = get_buffer_data_len(_p_send_buffer);
-    if (data_len > 0)
-    {
-        if (_p_send_buffer->read_index < _p_send_buffer->write_index)
-        {
-            send_len = SendMsgInternal(&(_p_send_buffer->ring_buffer[_p_send_buffer->read_index]), data_len);
-            if (send_len > 0)
-            {
-                move_read_index(_p_send_buffer, send_len);
-                if (send_len == data_len)
-                {   // 发送缓冲中的数据已经发完, 暂时关闭对可写事件的监听
-                    _p_event_poll->StopMonitoringWrite(_sock_fd, this);
-                }
+    char *sendBuf = _p_recv_packet->getWriteBuff();
+    data_len = _p_recv_packet->getWriteBuffLen();
+    if (data_len > 0){
+        send_len = sendMsgInternal(sendBuf, data_len);
+        if (send_len > 0){//暂时不考虑缓存区已满，只发送部分情况
+            if (send_len < data_len){// 发送缓冲中的数据未发送完全，忽略掉
+                log_write(LOG_ERR, "write data not send done:send_len:%d,data_len:%d,sock_fd:%d",send_len,data_len,_sock_fd);
             }
-            else
-            {
-                log_error("send_len:%d data_len:%d", send_len, data_len);
-            }
-            return send_len;
+            _p_event_poll->stopMonitoringWrite(_sock_fd, this);
+        }else{
+            log_write(LOG_ERR,"send_len:%d data_len:%d", send_len, data_len);
         }
-        else
-        {
-            int end_data_len = _p_send_buffer->buffer_length - _p_send_buffer->read_index;
-            int start_data_len = _p_send_buffer->write_index;
-            
-            send_len = SendMsgInternal(_p_send_buffer->ring_buffer + _p_send_buffer->read_index, end_data_len);
-            if (send_len > 0)
-            {
-                move_read_index(_p_send_buffer, send_len);
-            }
-            
-            if (send_len < end_data_len)
-            {
-                return send_len;
-            }
-            
-            send_len = SendMsgInternal(_p_send_buffer->ring_buffer, start_data_len);
-            if (send_len > 0)
-            {
-                move_read_index(_p_send_buffer, send_len);
-            }
-            
-            if (send_len < start_data_len)
-            {
-                if (send_len >= 0)
-                {
-                    return send_len + end_data_len;
-                }
-                else
-                {
-                    log_error("send_len:%d start_data_len:%d ", send_len, start_data_len);
-                    return send_len;
-                }
-            }
-            else
-            {   // 发送缓冲中的数据已经发完, 暂时关闭对可写事件的监听
-                _p_event_poll->StopMonitoringWrite(_sock_fd, this);
-                return data_len;
-            }
-        }
-    }
-    else
-    {
-        _p_event_poll->StopMonitoringWrite(_sock_fd, this);
+        return send_len;
+    }else{
         return 0;
     }
-    */
     return 1;
 }
 
-int CTcpConnection::OnCanWrite(void)
-{
+int CTcpConnection::OnCanWrite(void){
 
     /*
     if (_connection_status < CONN_STATUS_CONNECTED)   // 建立连接尚未成功
